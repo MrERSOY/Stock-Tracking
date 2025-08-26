@@ -19,7 +19,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, type ControllerRenderProps } from "react-hook-form";
 import { signIn } from "@/server/users";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -29,8 +29,8 @@ import { authClient } from "@/lib/auth-client";
 import Link from "next/link";
 
 const formSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8).max(8),
+  email: z.string().email("Geçersiz e-posta"),
+  password: z.string().min(8, "En az 8 karakter").max(64, "Çok uzun"),
 });
 
 export function LoginForm({
@@ -38,6 +38,8 @@ export function LoginForm({
   ...props
 }: React.ComponentProps<"div">) {
   const [isLoading, setIsLoading] = useState(false);
+  const [lastCode, setLastCode] = useState<string | null>(null);
+  const [sendingSetup, setSendingSetup] = useState(false);
   const router = useRouter();
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -47,7 +49,7 @@ export function LoginForm({
     },
   });
 
-  const signInWithGoole = async () => {
+  const signInWithGoogle = async () => {
     await authClient.signIn.social({
       provider: "google",
       callbackURL: "/dashboard",
@@ -57,16 +59,66 @@ export function LoginForm({
   // 2. Define a submit handler.
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    const { success, message } = await signIn(values.email, values.password);
-    if (success) {
-      toast.success(message as string);
-      router.push("/dashboard");
-    } else {
-      toast.error(message as string);
+    try {
+      const { success, message, code } = await signIn(
+        values.email,
+        values.password
+      );
+      setLastCode(code || null);
+
+      if (success) {
+        toast.success("Giriş başarılı");
+        router.replace("/dashboard");
+        return;
+      }
+
+      // Hata durumları için farklı mesajlar
+      switch (code) {
+        case "email_unverified":
+          toast.error("E-posta doğrulanmamış. Lütfen gelen kutunu kontrol et.");
+          form.setError("email", { message: "E-posta doğrulanmamış" });
+          break;
+        case "no_password":
+          toast.error(
+            "Bu hesap için parola yok. Google ile giriş yapmayı dene."
+          );
+          form.setError("password", {
+            message: "Bu hesap parola tanımlı değil",
+          });
+          break;
+        case "invalid_credentials":
+          toast.error("E-posta veya şifre hatalı");
+          form.setError("password", { message: "Hatalı giriş" });
+          break;
+        default:
+          toast.error(message || "Giriş başarısız");
+          form.setError("password", { message: "Giriş başarısız" });
+      }
+    } catch {
+      toast.error("Beklenmedik hata");
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
-    // Do something with the form values.
-    // ✅ This will be type-safe and validated.
+  }
+
+  async function sendPasswordSetupEmail() {
+    const email = form.getValues("email");
+    if (!email) return;
+    try {
+      setSendingSetup(true);
+      await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      toast.success(
+        "Parola oluşturma bağlantısı e-postana gönderildi (varsa)."
+      );
+    } catch {
+      toast.error("İstek gönderilemedi");
+    } finally {
+      setSendingSetup(false);
+    }
   }
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -87,7 +139,7 @@ export function LoginForm({
                     variant="outline"
                     className="w-full"
                     type="button"
-                    onClick={signInWithGoole}
+                    onClick={signInWithGoogle}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                       <path
@@ -108,7 +160,7 @@ export function LoginForm({
                     <FormField
                       control={form.control}
                       name="email"
-                      render={({ field }) => (
+                      render={({ field }: { field: any }) => (
                         <FormItem>
                           <FormLabel>Email</FormLabel>
                           <FormControl>
@@ -125,7 +177,7 @@ export function LoginForm({
                       <FormField
                         control={form.control}
                         name="password"
-                        render={({ field }) => (
+                        render={({ field }: { field: any }) => (
                           <FormItem>
                             <FormLabel>Password</FormLabel>
                             <FormControl>
@@ -151,14 +203,41 @@ export function LoginForm({
                     {isLoading ? (
                       <Loader2 className="animate-spin size-4" />
                     ) : (
-                      "Login"
+                      "Giriş Yap"
                     )}
                   </Button>
+                  {lastCode === "no_password" && (
+                    <div className="rounded-md border border-dashed p-3 text-xs space-y-2">
+                      <p className="text-muted-foreground m-0">
+                        Bu hesap Google ile açılmış olabilir. Parola tanımlamak
+                        için e-postana bir bağlantı gönderebilirsin.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={sendingSetup}
+                        onClick={sendPasswordSetupEmail}
+                      >
+                        {sendingSetup ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          "Parola Oluşturma Bağlantısı Gönder"
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                  <div
+                    aria-live="polite"
+                    className="text-xs text-muted-foreground"
+                  >
+                    {isLoading && "Giriş yapılıyor..."}
+                  </div>
                 </div>
                 <div className="text-center text-sm">
                   Don&apos;t have an account?{" "}
-                  <Link href="signup" className="underline underline-offset-4">
-                    Sign up
+                  <Link href="/signup" className="underline underline-offset-4">
+                    Kayıt Ol
                   </Link>
                 </div>
               </div>

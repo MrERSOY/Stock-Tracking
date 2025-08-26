@@ -1,10 +1,26 @@
 import {
+  timestamp,
   pgTable,
   text,
-  timestamp,
-  boolean,
+  primaryKey,
   integer,
+  pgEnum,
+  real,
+  varchar,
+  boolean,
 } from "drizzle-orm/pg-core";
+
+// --- ENUM'lar (Sabit Seçenekler) ---
+export const userRoleEnum = pgEnum("user_role", ["CUSTOMER", "STAFF", "ADMIN"]);
+export const orderStatusEnum = pgEnum("order_status", [
+  "PENDING",
+  "PAID",
+  "SHIPPED",
+  "DELIVERED",
+  "CANCELLED",
+]);
+
+// --- Kimlik Doğrulama ve Kullanıcı Tabloları ---
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -14,12 +30,14 @@ export const user = pgTable("user", {
     .$defaultFn(() => false)
     .notNull(),
   image: text("image"),
+  password: text("password"),
   createdAt: timestamp("created_at")
     .$defaultFn(() => /* @__PURE__ */ new Date())
     .notNull(),
   updatedAt: timestamp("updated_at")
     .$defaultFn(() => /* @__PURE__ */ new Date())
     .notNull(),
+  role: userRoleEnum("role").default("CUSTOMER"),
 });
 
 export const session = pgTable("session", {
@@ -33,6 +51,7 @@ export const session = pgTable("session", {
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
+  activeOrganizationId: text("active_organization_id"),
 });
 
 export const account = pgTable("account", {
@@ -66,4 +85,99 @@ export const verification = pgTable("verification", {
   ),
 });
 
-export const schema = { user, session, account, verification };
+// --- Yönetim Paneli Tabloları ---
+
+export const category = pgTable("category", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  description: text("description"),
+  parentId: text("parentId"),
+  level: integer("level").default(0).notNull(),
+  sortOrder: integer("sortOrder").default(0).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  image: text("image"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export const product = pgTable("product", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  price: real("price").notNull(),
+  images: text("images").array(),
+  stock: integer("stock").default(0).notNull(),
+  barcode: varchar("barcode", { length: 255 }).unique(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  categoryId: text("categoryId")
+    .notNull()
+    .references(() => category.id),
+});
+
+export const order = pgTable("order", {
+  id: text("id").primaryKey(),
+  total: real("total").notNull(),
+  status: orderStatusEnum("status").default("PAID"),
+  customerId: text("customerId").references(() => customer.id),
+  paymentMethod: text("paymentMethod").default("card"),
+  discount: real("discount").default(0),
+  tax: real("tax").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  userId: text("userId").references(() => user.id),
+});
+
+export const customer = pgTable("customer", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone").notNull(),
+  address: text("address"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export const orderItem = pgTable("order_item", {
+  id: text("id").primaryKey(),
+  quantity: integer("quantity").notNull(),
+  price: real("price").notNull(),
+  orderId: text("orderId")
+    .notNull()
+    .references(() => order.id, { onDelete: "cascade" }),
+  productId: text("productId")
+    .notNull()
+    .references(() => product.id),
+});
+
+// --- TİP TANIMLAMALARI (TYPE INFERENCE) ---
+export type User = typeof user.$inferSelect;
+export type NewUser = typeof user.$inferInsert;
+
+export type Product = typeof product.$inferSelect;
+export type NewProduct = typeof product.$inferInsert;
+
+export type Category = typeof category.$inferSelect;
+export type NewCategory = typeof category.$inferInsert;
+
+export type Order = typeof order.$inferSelect;
+export type NewOrder = typeof order.$inferInsert;
+
+export type Customer = typeof customer.$inferSelect;
+export type NewCustomer = typeof customer.$inferInsert;
+
+export type OrderItem = typeof orderItem.$inferSelect;
+export type NewOrderItem = typeof orderItem.$inferInsert;
+
+// --- Schema Export for better-auth ---
+export const schema = {
+  user,
+  session,
+  account,
+  verification,
+  category,
+  product,
+  order,
+  customer,
+  orderItem,
+};
