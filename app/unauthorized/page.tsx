@@ -49,7 +49,7 @@ export default function UnauthorizedPage() {
               <strong>Admin</strong> kullanıcıları için tasarlanmıştır.
             </p>
             <p className="mt-2">
-              Müşteri hesabınız henüz yetkililer tarafından onaylanmamıştır. 
+              Müşteri hesabınız henüz yetkililer tarafından onaylanmamıştır.
               Lütfen onay sürecinin tamamlanmasını bekleyin.
             </p>
           </div>

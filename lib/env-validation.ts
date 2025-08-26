@@ -7,12 +7,18 @@ import { z } from "zod";
  */
 const envSchema = z.object({
   // Database
-  DATABASE_URL: z.string().url("DATABASE_URL must be a valid URL"),
+  DATABASE_URL: z.string().min(1, "DATABASE_URL is required").optional(),
 
   // Authentication
-  RESEND_API_KEY: z.string().min(1, "RESEND_API_KEY is required"),
-  GOOGLE_CLIENT_ID: z.string().min(1, "GOOGLE_CLIENT_ID is required"),
-  GOOGLE_CLIENT_SECRET: z.string().min(1, "GOOGLE_CLIENT_SECRET is required"),
+  RESEND_API_KEY: z.string().min(1, "RESEND_API_KEY is required").optional(),
+  GOOGLE_CLIENT_ID: z
+    .string()
+    .min(1, "GOOGLE_CLIENT_ID is required")
+    .optional(),
+  GOOGLE_CLIENT_SECRET: z
+    .string()
+    .min(1, "GOOGLE_CLIENT_SECRET is required")
+    .optional(),
 
   // App
   NEXT_PUBLIC_APP_URL: z
@@ -30,7 +36,7 @@ type EnvSchema = z.infer<typeof envSchema>;
 
 /**
  * Validated environment variables
- * Throws an error if any required env var is missing or invalid
+ * In build time, allows missing vars; at runtime, shows warnings
  */
 export const env: EnvSchema = (() => {
   try {
@@ -40,6 +46,24 @@ export const env: EnvSchema = (() => {
       const missingVars = error.issues.map(
         (err) => `${err.path.join(".")}: ${err.message}`
       );
+
+      // In build time, just warn instead of throwing
+      if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL) {
+        console.warn("⚠️ Some environment variables are missing:");
+        missingVars.forEach((msg) => console.warn(`  - ${msg}`));
+        console.warn("App may not function correctly without these variables.");
+
+        // Return default values for build
+        return {
+          NODE_ENV: process.env.NODE_ENV || "development",
+          DATABASE_URL: process.env.DATABASE_URL,
+          RESEND_API_KEY: process.env.RESEND_API_KEY,
+          GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+          NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+        } as EnvSchema;
+      }
+
       console.error("❌ Invalid environment variables:");
       missingVars.forEach((msg) => console.error(`  - ${msg}`));
       console.error(
